@@ -1,0 +1,26 @@
+{
+  "name": "jsvgc",
+  "version": "0.0.1",
+  "description": "A node module for converting SVGs to PNGs.",
+  "main": "./build/Release/jsvgc",
+  "scripts": {
+    "test": "node test/test.js",
+    "install": "node-gyp rebuild"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://gitlab.com/erikwilson/JSVGC.git"
+  },
+  "keywords": [
+    "SVG",
+    "PNG",
+    "convert"
+  ],
+  "author": "Erik Wilson",
+  "license": "GPL-2.0",
+  "gypfile": true,
+  "bugs": {
+    "url": "https://gitlab.com/erikwilson/JSVGC/issues"
+  },
+  "homepage": "https://gitlab.com/erikwilson/JSVGC#README"
+}
