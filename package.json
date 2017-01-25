@@ -1,6 +1,6 @@
 {
   "name": "jsvgc",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A node module for converting SVGs to PNGs.",
   "main": "jsvgc.js",
   "scripts": {
@@ -24,6 +24,6 @@
   },
   "homepage": "https://gitlab.com/erikwilson/JSVGC#README",
   "dependencies": {
-  	"nan": "*"
+    "nan": "*"
   }
 }
