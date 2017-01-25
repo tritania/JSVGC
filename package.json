@@ -22,5 +22,8 @@
   "bugs": {
     "url": "https://gitlab.com/erikwilson/JSVGC/issues"
   },
-  "homepage": "https://gitlab.com/erikwilson/JSVGC#README"
+  "homepage": "https://gitlab.com/erikwilson/JSVGC#README",
+  "dependencies": {
+  	"nan": "*"
+  }
 }
