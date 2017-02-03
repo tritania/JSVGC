@@ -2,8 +2,11 @@
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <algorithm>
+#include <iterator>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <float.h>
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -12,12 +15,87 @@
 #include "nanosvg.h"
 #define NANOSVGRAST_IMPLEMENTATION
 #include "nanosvgrast.h"
+#include <uv.h>
+#include <fcntl.h>
 
 using namespace std;
 using namespace Nan;
 using namespace v8;
 
-bool svg_convert(vector<unsigned char> & input_data, vector<unsigned char> & png, int width, int height)
+int writeFile(string out, vector<unsigned char> png) {
+    uv_fs_t open_req;
+    uv_fs_t write_req;
+    uv_fs_t close_req;
+
+    uv_buf_t buff;
+
+    int op;
+    int wr;
+
+    char *buf = new char[png.size()];
+    std::copy(png.begin(), png.end(), buf);
+    buff = uv_buf_init(buf, png.size());
+    
+
+    op = uv_fs_open(uv_default_loop(), &open_req, out.c_str(), O_WRONLY | O_CREAT, 0, NULL); //need proper file handles here
+    if (op != -1) {
+        wr = uv_fs_write(uv_default_loop(), &write_req, op, &buff, sizeof(buf), -1, NULL); //Error Here
+        if (wr != -1) {
+            return uv_fs_close(uv_default_loop(), &close_req, open_req.result, NULL);
+        } else {
+            fprintf(stderr, "Error writing file!");
+            return -1;
+        }
+    } else {
+        fprintf(stderr, "Error opening file!");
+        return -1;
+    }
+    uv_run(uv_default_loop(), UV_RUN_DEFAULT);
+}
+
+int readFile(string arg, vector<unsigned char> & data) {
+    static char str_buf[65];
+    static char data_buf[64];
+    uv_buf_t buff;
+    uv_fs_t open_req; 
+    uv_fs_t read_req;   
+    uv_fs_t close_req;
+
+    int op;
+    int re;
+
+    bool loop = true;
+
+    string svgfile = "";
+
+    buff = uv_buf_init(data_buf, sizeof(data_buf));
+    op = uv_fs_open(uv_default_loop(), &open_req, arg.c_str(), O_RDONLY, 0, NULL);
+    if (op != -1) {
+        while (loop) {
+            re = uv_fs_read(uv_default_loop(), &read_req, open_req.result, &buff, 1, -1, NULL);
+            if (re < 0) {
+                fprintf(stderr, "Read error!");
+            }
+            else if (re == 0) {
+                loop = false;
+                copy(svgfile.begin(), svgfile.end(), back_inserter(data));
+                return uv_fs_close(uv_default_loop(), &close_req, open_req.result, NULL);
+            }
+            else {
+                memset(str_buf, 0, sizeof(str_buf));
+                memcpy(str_buf, data_buf, sizeof(data_buf));
+                svgfile += string(str_buf);
+                memset(data_buf, 0, sizeof(data_buf));
+            }
+        }
+    } else {
+        fprintf(stderr, "Error opening file!");
+    }
+    uv_run(uv_default_loop(), UV_RUN_DEFAULT);
+    return 1;
+}
+
+bool svg_convert(vector<unsigned char> input_data, vector<unsigned char> & png, int width, int height)
 {
 	NSVGimage *image = NULL;
 	NSVGrasterizer *rast = NULL;
@@ -30,7 +108,7 @@ bool svg_convert(vector<unsigned char> & input_data, vector<unsigned char> & png
 
 	image = nsvgParse(reinterpret_cast<char*>(input_data.data()), "px", 96.0f);
 	if (image == NULL) {
-		//fail
+		return false;
 	}
 	
 	int ws = (int)image->width;
@@ -38,12 +116,12 @@ bool svg_convert(vector<unsigned char> & input_data, vector<unsigned char> & png
 
 	rast = nsvgCreateRasterizer();
 	if (rast == NULL) {
-		//fail
+		return false;
 	}
 
 	img = new unsigned char[w*h*4];
 	if (img == NULL) {
-		//fail
+		return false;
 	}
 
 	nsvgRasterize(rast, image, 0, 0, scale, img, width, height, width*4);
@@ -64,27 +142,29 @@ void buffer_delete_callback(char* data, void* used_vector) {
 
 class ConWorker : public AsyncWorker {
     public:
-    ConWorker(Callback * callback, Local<Object> &svgBuffer, int size, int w, int h) : AsyncWorker(callback) {
-        unsigned char*buffer = (unsigned char*) node::Buffer::Data(svgBuffer);
-        vector<unsigned char> tmp(buffer, buffer +  (unsigned int) size);
-        svg_data = tmp;
+    ConWorker(Callback * callback, string in_file, string out_file, int w, int h) : AsyncWorker(callback) {
         width = w;
         height = h;
+        in = in_file;
+        out = out_file;
     }
+
     void Execute() {
        png = new vector<unsigned char>();
+       readFile(in, svg_data);
        svg_convert(svg_data, *png, width, height);
+       writeFile(out, *png);
+       return;
     }
+
     void HandleOKCallback () {
-        Local<Object> pngData = 
-               NewBuffer((char *)png->data(), 
-               png->size(), buffer_delete_callback, 
-               png).ToLocalChecked();
-        Local<Value> argv[] = { Nan::Null(), pngData };
+        Local<Value> argv[] = { Nan::Null(), Nan::True() };
         callback->Call(2, argv);
     }
 
     private:
+        string in;
+        string out;
 		int width;
 		int height;
         vector<unsigned char> svg_data;
@@ -92,12 +172,18 @@ class ConWorker : public AsyncWorker {
 };
 
 NAN_METHOD(Convert) {
-    int size = To<int>(info[1]).FromJust();
-    Local<Object> svgBuffer = info[0]->ToObject();
+    Callback *callback = new Callback(info[4].As<Function>());
+
+    String::Utf8Value param1(info[0]->ToString());
+    string in_file = std::string(*param1);
+
+    String::Utf8Value param2(info[1]->ToString());
+    string out_file = std::string(*param2);
+
     int width = info[2]->NumberValue();
     int height = info[3]->NumberValue();
-    Callback *callback = new Callback(info[4].As<Function>());
-    AsyncQueueWorker(new ConWorker(callback, svgBuffer ,size, width, height));
+    
+    AsyncQueueWorker(new ConWorker(callback, in_file, out_file, width, height));
 }
 
 NAN_MODULE_INIT(Init) {
