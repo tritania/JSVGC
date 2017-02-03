@@ -1,5 +1,4 @@
 var jsvgc = require("../jsvgc");
-var asyncv = false;
 var result;
 
 result = jsvgc.convertSync("./test/drawing.svg", "./test/test2.png", 500, 500);
