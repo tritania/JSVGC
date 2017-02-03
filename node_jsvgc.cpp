@@ -151,14 +151,22 @@ class ConWorker : public AsyncWorker {
 
     void Execute() {
        png = new vector<unsigned char>();
-       readFile(in, svg_data);
-       svg_convert(svg_data, *png, width, height);
-       writeFile(out, *png);
+       int rr = readFile(in, svg_data);
+       bool sr = svg_convert(svg_data, *png, width, height);
+       int wr = writeFile(out, *png);
+       if (rr != 0 || sr != true || wr != 0) {
+            HandleErrorCallback();
+       } 
        return;
     }
 
     void HandleOKCallback () {
         Local<Value> argv[] = { Nan::Null(), Nan::True() };
+        callback->Call(2, argv);
+    }
+
+    void HandleErrorCallback() {
+        Local<Value> argv[] = { Nan::New("Conversion Error").ToLocalChecked(), Nan::Null() };
         callback->Call(2, argv);
     }
 
@@ -172,7 +180,24 @@ class ConWorker : public AsyncWorker {
 };
 
 NAN_METHOD(Convert) {
-    Callback *callback = new Callback(info[4].As<Function>());
+    Callback *callback;
+
+    if (info[4]->IsFunction()) {
+        callback = new Callback(info[4].As<Function>());
+    } else {
+        Nan::ThrowTypeError("Wrong Arguments");
+        return;
+    }
+
+    if (info.Length() < 5) {
+        Nan::ThrowTypeError("Wrong amount of arguments");
+        return;
+    }
+
+    if (!info[0]->IsString() || !info[1]->IsString() || !info[2]->IsNumber() || !info[3]->IsNumber()) {
+        Nan::ThrowTypeError("Wrong arguments");
+        return;
+    }
 
     String::Utf8Value param1(info[0]->ToString());
     string in_file = std::string(*param1);
@@ -186,10 +211,46 @@ NAN_METHOD(Convert) {
     AsyncQueueWorker(new ConWorker(callback, in_file, out_file, width, height));
 }
 
+NAN_METHOD(ConvertSync) {
+    if (info.Length() < 4) {
+        Nan::ThrowTypeError("Wrong amount of arguments");
+        return;
+    }
+
+    if (!info[0]->IsString() || !info[1]->IsString() || !info[2]->IsNumber() || !info[3]->IsNumber()) {
+        Nan::ThrowTypeError("Wrong arguments");
+        return;
+    }
+
+    String::Utf8Value param1(info[0]->ToString());
+    string in_file = std::string(*param1);
+
+    String::Utf8Value param2(info[1]->ToString());
+    string out_file = std::string(*param2);
+
+    int width = info[2]->NumberValue();
+    int height = info[3]->NumberValue();
+
+    vector<unsigned char> svg_data;
+    vector<unsigned char> * png  = new vector<unsigned char>();;
+
+    int rres = readFile(in_file, svg_data);
+    bool sc = svg_convert(svg_data, *png, width, height);
+    int res = writeFile(out_file, *png);
+    if (res == 0 && sc == true && rres == 0) {
+        info.GetReturnValue().Set(true);
+    } else {
+        info.GetReturnValue().Set(false);
+    }
+}
+
 NAN_MODULE_INIT(Init) {
          
-   Nan::Set(target, New<String>("Convert").ToLocalChecked(),
+   Nan::Set(target, New<String>("convertSVG").ToLocalChecked(),
         GetFunction(New<FunctionTemplate>(Convert)).ToLocalChecked());
+
+   Nan::Set(target, New<String>("convertSync").ToLocalChecked(),
+        GetFunction(New<FunctionTemplate>(ConvertSync)).ToLocalChecked());
         
 }
 

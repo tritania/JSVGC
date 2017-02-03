@@ -1,19 +1,18 @@
 var jsvgc = require("../jsvgc");
 var asyncv = false;
+var result;
 
-var hrTime = process.hrtime();
-console.log("Start Time " + hrTime[0] * 1000000 + hrTime[1] / 1000);
+result = jsvgc.convertSync("./test/drawing.svg", "./test/test2.png", 500, 500);
+if (result) {
+	console.log("Sync Good");
+} else {
+	console.log("Sync Error");
+}
 
-jsvgc.Convert("./test/drawing.svg", "./test/test.png", 500, 500, function (err, res) {
+jsvgc.convertSVG("./test/drawing.svg", "./test/test.png", 500, 500, function (err, res) {
 	if (err) {
-		console.log(err);
+		console.log("Async Error: "+ err);
 	} else {
-		console.log("Created PNG!");
-		hrTime = process.hrtime();
-		console.log("Completed Time " + hrTime[0] * 1000000 + hrTime[1] / 1000);
-		asyncv = true;
+		console.log("Async Good");
 	}
 });
-
-hrTime = process.hrtime();
-console.log("After Call Time " + hrTime[0] * 1000000 + hrTime[1] / 1000);
