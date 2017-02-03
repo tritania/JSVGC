@@ -22,6 +22,17 @@ using namespace std;
 using namespace Nan;
 using namespace v8;
 
+bool checkForFile(string file) {
+    uv_fs_t stat_req;
+    int r = uv_fs_stat(uv_default_loop(), &stat_req, file.c_str(), NULL);
+    if (r) {
+        return false; 
+    } else {
+        return true;
+    }
+    uv_run(uv_default_loop(), UV_RUN_DEFAULT);
+}
+
 int writeFile(string out, vector<unsigned char> png) {
     uv_fs_t open_req;
     uv_fs_t write_req;
@@ -142,22 +153,26 @@ void buffer_delete_callback(char* data, void* used_vector) {
 
 class ConWorker : public AsyncWorker {
     public:
-    ConWorker(Callback * callback, string in_file, string out_file, int w, int h) : AsyncWorker(callback) {
+    ConWorker(Callback * callback, string in_file, string out_file, int w, int h, bool rewrite) : AsyncWorker(callback) {
         width = w;
         height = h;
         in = in_file;
         out = out_file;
+        rwrite = rewrite;
     }
 
     void Execute() {
-       png = new vector<unsigned char>();
-       int rr = readFile(in, svg_data);
-       bool sr = svg_convert(svg_data, *png, width, height);
-       int wr = writeFile(out, *png);
-       if (rr != 0 || sr != true || wr != 0) {
+        if (!rwrite && checkForFile(out)) {
+            return;
+        }
+        png = new vector<unsigned char>();
+        int rr = readFile(in, svg_data);
+        bool sr = svg_convert(svg_data, *png, width, height);
+        int wr = writeFile(out, *png);
+        if (rr != 0 || sr != true || wr != 0) {
             HandleErrorCallback();
-       } 
-       return;
+        } 
+        return;
     }
 
     void HandleOKCallback () {
@@ -171,6 +186,7 @@ class ConWorker : public AsyncWorker {
     }
 
     private:
+        bool rwrite;
         string in;
         string out;
 		int width;
@@ -181,13 +197,7 @@ class ConWorker : public AsyncWorker {
 
 NAN_METHOD(Convert) {
     Callback *callback;
-
-    if (info[4]->IsFunction()) {
-        callback = new Callback(info[4].As<Function>());
-    } else {
-        Nan::ThrowTypeError("Wrong Arguments");
-        return;
-    }
+    bool rewrite = false;
 
     if (info.Length() < 5) {
         Nan::ThrowTypeError("Wrong amount of arguments");
@@ -199,6 +209,30 @@ NAN_METHOD(Convert) {
         return;
     }
 
+    if (info.Length() == 6) {
+        if (info[4]->IsBoolean()) {
+            rewrite = info[4]->BooleanValue();
+        } else {
+            Nan::ThrowTypeError("Wrong arguments");
+        }
+
+        if (info[5]->IsFunction()) {
+            callback = new Callback(info[5].As<Function>());
+        } else {
+            Nan::ThrowTypeError("Wrong Arguments");
+            return;
+        }
+    } 
+
+    if (info.Length() == 5) {
+        if (info[4]->IsFunction()) {
+            callback = new Callback(info[4].As<Function>());
+        } else {
+            Nan::ThrowTypeError("Wrong Arguments");
+            return;
+        }
+    }
+
     String::Utf8Value param1(info[0]->ToString());
     string in_file = std::string(*param1);
 
@@ -208,10 +242,11 @@ NAN_METHOD(Convert) {
     int width = info[2]->NumberValue();
     int height = info[3]->NumberValue();
     
-    AsyncQueueWorker(new ConWorker(callback, in_file, out_file, width, height));
+    AsyncQueueWorker(new ConWorker(callback, in_file, out_file, width, height, rewrite));
 }
 
 NAN_METHOD(ConvertSync) {
+    bool rwrite = false;
     if (info.Length() < 4) {
         Nan::ThrowTypeError("Wrong amount of arguments");
         return;
@@ -222,11 +257,24 @@ NAN_METHOD(ConvertSync) {
         return;
     }
 
+    if (info.Length() == 5) {
+        if (info[4]->IsBoolean()) {
+            rwrite = info[4]->BooleanValue();
+        } else {
+            Nan::ThrowTypeError("Wrong arguments");
+        }
+    }
+
     String::Utf8Value param1(info[0]->ToString());
     string in_file = std::string(*param1);
 
     String::Utf8Value param2(info[1]->ToString());
     string out_file = std::string(*param2);
+
+    if (!rwrite && checkForFile(out_file)) {    
+        info.GetReturnValue().Set(true);
+        return;
+    }
 
     int width = info[2]->NumberValue();
     int height = info[3]->NumberValue();
@@ -239,8 +287,10 @@ NAN_METHOD(ConvertSync) {
     int res = writeFile(out_file, *png);
     if (res == 0 && sc == true && rres == 0) {
         info.GetReturnValue().Set(true);
+        return;
     } else {
         info.GetReturnValue().Set(false);
+        return;
     }
 }
 
